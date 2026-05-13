@@ -1,0 +1,19 @@
+[2026/05/13 14:24:35.692119,  0] source3/smbd/server.c:2119(main)
+  smbd version 4.23.6-Ubuntu-4.23.6+dfsg-1ubuntu2 started.
+  Copyright Andrew Tridgell and the Samba Team 1992-2025
+[2026/05/13 14:24:35.708137,  1] source3/profile/profile.c:53(set_profile_level)
+  INFO: Profiling turned OFF from pid 1
+[2026/05/13 14:24:35.708252,  0] lib/util/become_daemon.c:119(exit_daemon)
+  exit_daemon: daemon failed to start: Failed to create session, error code 1
+[2026/05/13 14:26:11.253343,  0] source3/smbd/server.c:2119(main)
+  smbd version 4.23.6-Ubuntu-4.23.6+dfsg-1ubuntu2 started.
+  Copyright Andrew Tridgell and the Samba Team 1992-2025
+[2026/05/13 14:26:11.266837,  1] source3/profile/profile.c:53(set_profile_level)
+  INFO: Profiling turned OFF from pid 1
+[2026/05/13 14:26:11.266915,  0] lib/util/become_daemon.c:119(exit_daemon)
+  exit_daemon: daemon failed to start: Failed to create session, error code 1
+[2026/05/13 14:29:20.956328,  0] source3/smbd/server.c:2119(main)
+  smbd version 4.23.6-Ubuntu-4.23.6+dfsg-1ubuntu2 started.
+  Copyright Andrew Tridgell and the Samba Team 1992-2025
+[2026/05/13 14:29:20.969700,  1] source3/profile/profile.c:53(set_profile_level)
+  INFO: Profiling turned OFF from pid 1
