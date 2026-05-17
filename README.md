@@ -361,18 +361,23 @@ exec smbd -F -i -d 1 --no-process-group
 ### Output
 
 **docker-compose ps**
+
 <img width="1514" height="744" alt="compose ps" src="https://github.com/user-attachments/assets/223cc9ba-60f9-45c3-8efc-61a0a97bc79d" />
 
 **docker-compose up**
+
 <img width="1512" height="527" alt="docker-compose up" src="https://github.com/user-attachments/assets/6366b18d-cd5d-4730-a763-cd1952f557d0" />
 
 **docker logs**
+
 <img width="717" height="562" alt="docker-logs" src="https://github.com/user-attachments/assets/ba1a0469-8151-4def-bdb4-0e15cbd4ad81" />
 
 **ls -la data/**
+
 <img width="822" height="167" alt="poin c" src="https://github.com/user-attachments/assets/da3c6ebe-9ed6-4bc1-8640-551dcbe210b3" />
 
 **Problem: docker logs -f**
+
 <img width="1034" height="218" alt="poin d" src="https://github.com/user-attachments/assets/a09ebc78-6017-4b24-ac48-5f7809701b63" />
 
 
