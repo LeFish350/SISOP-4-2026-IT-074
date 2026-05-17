@@ -103,6 +103,9 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset, stru
 }
 ```
 
+### Output
+
+---
 ## SOAL 2: Poke MOO
 
 ### Deskripsi Masalah
@@ -232,3 +235,7 @@ RUN mkdir -p /app/db
 EXPOSE 9000
 CMD ["./server"]
 ```
+
+### Output
+
+---
