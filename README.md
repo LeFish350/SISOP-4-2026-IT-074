@@ -7,120 +7,96 @@
 ## SOAL 1: Save Asisten Kenz
 
 ### Deskripsi Masalah
-Pada soal ini, praktikan diminta untuk membangun sebuah *Filesystem in Userspace* (FUSE) bernama `kenz_rescue`. Program ini bertujuan untuk membantu mencari Asisten Kenz yang hilang dengan memecahkan teka-teki koordinat yang terpecah ke dalam 7 file teks (`1.txt` hingga `7.txt`) di dalam sebuah direktori sumber. Sistem file virtual ini harus melakukan *passthrough* dari direktori sumber ke direktori *mount*, dengan sebuah syarat khusus: sistem harus secara dinamis membangkitkan sebuah file virtual bernama `tujuan.txt` (*on-the-fly*) yang berisi gabungan isi ketujuh file tersebut beserta sebuah *prefix* string, tanpa membuat file `tujuan.txt` tersebut secara fisik di dalam direktori sumber (flashdisk).
+Pada soal ini, praktikan diminta untuk membangun sebuah *Filesystem in Userspace* (FUSE) bernama `kenz_rescue`. Program ini bertujuan untuk membantu mencari Asisten Kenz yang hilang dengan memecahkan teka-teki koordinat yang terpecah ke dalam 7 file teks (`1.txt` hingga `7.txt`) di dalam sebuah direktori sumber (flashdisk). Sistem file virtual ini harus melakukan *passthrough* dari direktori sumber ke direktori *mount*, dengan syarat khusus: sistem harus membangkitkan file virtual bernama `tujuan.txt` secara dinamis. File virtual ini harus berisi gabungan koordinat rahasia yang diekstrak dari baris berawalan `"KOORD:"` pada ketujuh file tersebut, dirangkai menjadi satu kalimat dengan *prefix* `"Tujuan Mas Amba: "`.
 
 ### Konsep Penyelesaian
-Penyelesaian masalah ini menggunakan FUSE di bahasa pemrograman C. Konsep utamanya adalah memanipulasi fungsi *callback* FUSE (`getattr`, `readdir`, `open`, dan `read`) agar memalsukan dan merekayasa keberadaan file `tujuan.txt`. File-file fisik di direktori asal diakses dengan meneruskan (*passthrough*) *system call* POSIX standar. Namun, ketika *user* atau sistem mengakses file `tujuan.txt`, FUSE akan mencegat (*intercept*) permintaan tersebut, lalu memproses pembacaan ketujuh file asli dan menyatukannya langsung di dalam memori saat *runtime*.
+Penyelesaian ini menggunakan API FUSE versi 31. Konsep utamanya adalah memanipulasi fungsi *callback* FUSE (`getattr`, `readdir`, `open`, dan `read`) agar memalsukan keberadaan file `tujuan.txt`. File-file fisik di direktori asal diakses dengan meneruskan (*passthrough*) *system call* POSIX ke direktori sumber yang di-*resolve* menggunakan `realpath()`. Ketika sistem mengakses file `tujuan.txt`, FUSE akan mencegat (*intercept*) permintaan tersebut. Sebuah fungsi *helper* bernama `generate_tujuan_content` akan dipanggil untuk membaca ketujuh file fisik secara *real-time*, melakukan *parsing* teks untuk membuang string awalan `"KOORD:"` dan karakter *newline*, lalu menyatukannya ke dalam satu *buffer* memori.
 
 ### Penjelasan Kode dan Logika Program
-1. **Fungsi `getattr`:** Saat *system call* meminta metadata atau atribut file, program akan mengecek apakah *path* yang direkuisisi adalah `/tujuan.txt`. Jika iya, FUSE mengembalikan struktur metadata buatan secara manual (seperti memberikan hak akses *read-only* `0444`). Untuk file lainnya, *path* akan ditranslasikan dan diteruskan ke direktori sumber menggunakan fungsi `lstat()`.
-```C
-static int xmp_getattr(const char *path, struct stat *stbuf) {
-    int res;
-    char fpath[1000];
-    sprintf(fpath, "%s%s", dirpath, path);
+1. **Ekstraksi String (`generate_tujuan_content`):** Ini adalah fungsi inti yang dipanggil saat ukuran atau isi file virtual dibutuhkan. Fungsi ini melakukan iterasi untuk membuka file `1.txt` hingga `7.txt`. Di dalam setiap file, ia membaca baris demi baris menggunakan `fgets()` dan mencari baris yang memiliki awalan `"KOORD:"` menggunakan `strncmp()`. Setelah ditemukan, teks koordinat diekstrak, dibersihkan dari spasi awal dan karakter *enter* (`\r\n`), lalu digabungkan (*concatenate*) ke dalam sebuah variabel statis.
 
+```C
+void generate_tujuan_content(char *output) {
+    char combined[4096] = "";
+    for (int i = 1; i <= 7; i++) {
+        char filepath[1024];
+        sprintf(filepath, "%s/%d.txt", source_dir, i);
+        FILE *f = fopen(filepath, "r");
+        if (f) {
+            char line[256];
+            // Membaca baris demi baris
+            while (fgets(line, sizeof(line), f)) {
+                // Memfilter hanya baris yang mengandung awalan "KOORD:"
+                if (strncmp(line, "KOORD:", 6) == 0) {
+                    char *fragment = line + 6;
+                    if (fragment[0] == ' ') fragment++; // Menghilangkan spasi setelah titik dua
+                    fragment[strcspn(fragment, "\r\n")] = 0; // Menghilangkan newline/enter
+                    strcat(combined, fragment); // Menyambungkan string
+                    break; 
+                }
+            }
+            fclose(f);
+        }
+    }
+    // Merakit hasil akhir
+    sprintf(output, "Tujuan Mas Amba: %s\n", combined);
+}
+```
+
+2. **Metadata Virtual (`xmp_getattr`):** Saat meminta atribut file, jika *path* yang dituju adalah `/tujuan.txt`, FUSE mengembalikan struktur metadata buatan secara manual dengan hak akses *read-only* `0444`. Ukuran file (parameter `st_size`) dikalkulasi secara dinamis saat itu juga dengan menghitung panjang *string* keluaran dari fungsi ekstraksi.
+
+```C
+static int xmp_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
+    (void) fi;
     memset(stbuf, 0, sizeof(struct stat));
 
     if (strcmp(path, "/tujuan.txt") == 0) {
         stbuf->st_mode = S_IFREG | 0444; 
         stbuf->st_nlink = 1;
-        stbuf->st_uid = getuid();
-        stbuf->st_gid = getgid();
-        stbuf->st_size = 1024;
+        
+        char content[4096];
+        generate_tujuan_content(content); // Men-generate string untuk mengukur sizenya
+        stbuf->st_size = strlen(content);
         return 0;
     }
-
-    // Passthrough untuk file lain (1.txt - 7.txt)
-    res = lstat(fpath, stbuf);
-    if (res == -1) return -errno;
-
-    return 0;
-}
-```
-2. **Fungsi `readdir`:** Fungsi ini bertanggung jawab menampilkan isi direktori. Selain membaca dan memasukkan isi direktori asli ke dalam *buffer* pengisian menggunakan fungsi `filler()`, program secara eksplisit menambahkan *entry* bernama `tujuan.txt`. Hal ini memastikan file virtual tersebut muncul ketika *user* mengeksekusi perintah `ls` di direktori *mount*.
-```C
-static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
-    char fpath[1000];
-    if(strcmp(path,"/") == 0) {
-        path = dirpath;
-        sprintf(fpath,"%s",path);
-    } else {
-        sprintf(fpath, "%s%s", dirpath, path);
-    }
-
-    DIR *dp;
-    struct dirent *de;
-    (void) offset;
-    (void) fi;
-
-    dp = opendir(fpath);
-    if (dp == NULL) return -errno;
-
     
-    while ((de = readdir(dp)) != NULL) {
-        struct stat st;
-        memset(&st, 0, sizeof(st));
-        st.st_ino = de->d_ino;
-        st.st_mode = de->d_type << 12;
-        filler(buf, de->d_name, &st, 0);
-    }
-
-    // Menambahkan entri tujuan.txt secara virtual di root folder mount
-    if (strcmp(path, dirpath) == 0) {
-        filler(buf, "tujuan.txt", NULL, 0);
-    }
-
-    closedir(dp);
+    // Passthrough untuk file asli
+    char fpath[1024];
+    sprintf(fpath, "%s%s", source_dir, path);
+    int res = lstat(fpath, stbuf);
+    if (res == -1) return -errno;
     return 0;
 }
 ```
-3. **Fungsi `read`:** Jika file yang dibaca adalah file biasa, FUSE meneruskannya menggunakan fungsi `pread()`. Akan tetapi, jika target pembacaannya adalah `/tujuan.txt`, program mendeklarasikan sebuah *buffer*, menyisipkan teks `"Tujuan Mas Amba: "`, lalu melakukan iterasi (*looping*) untuk membuka `1.txt` hingga `7.txt`. Isi dari masing-masing file tersebut dibaca, digabungkan ke dalam *buffer* memori menggunakan manipulasi *string*, dan akhirnya diserahkan ke *buffer* milik *user*.
+
+3. **Pendaftaran Direktori (`xmp_readdir`):** Fungsi ini menampilkan isi direktori sumber menggunakan pembacaan `opendir` dan `readdir` standar. Sebagai tambahan, program menggunakan fungsi `filler()` untuk menyisipkan entri `/tujuan.txt` secara eksplisit agar muncul saat pengguna melakukan perintah `ls` di terminal.
+
+```C
+static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
+    // Jika sedang berada di root folder (mount point), tambahkan tujuan.txt
+    if (strcmp(path, "/") == 0) filler(buf, "tujuan.txt", NULL, 0, 0);
+    return 0;
+}
+```
+
+4. **Pembacaan Virtual (`xmp_read`):** Jika file yang dibaca adalah file reguler, FUSE meneruskannya dengan fungsi `pread()`. Namun, jika yang dibaca adalah `/tujuan.txt`, FUSE mengeksekusi fungsi `generate_tujuan_content` untuk mendapatkan hasil kalimat akhir, dan menyalinnya ke *buffer* sistem pengguna berdasarkan besaran `offset` dan `size` yang diminta.
+
 ```C
 static int xmp_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-    char fpath[1000];
-    sprintf(fpath, "%s%s", dirpath, path);
-    int res = 0;
-    int fd = 0;
-
-    
     if (strcmp(path, "/tujuan.txt") == 0) {
-        char temp_buffer[2048] = "Tujuan Mas Amba: "; 
-        char frag_path[1000];
-        char frag_buf[256];
-
-        // Looping untuk membuka dan membaca file 1.txt hingga 7.txt
-        for (int i = 1; i <= 7; i++) {
-            sprintf(frag_path, "%s/%d.txt", dirpath, i);
-            FILE *fp = fopen(frag_path, "r");
-            if (fp != NULL) {
-                memset(frag_buf, 0, sizeof(frag_buf));
-                fread(frag_buf, 1, sizeof(frag_buf) - 1, fp); 
-                strcat(temp_buffer, frag_buf);
-                fclose(fp);
-            }
-        }
-
-        int len = strlen(temp_buffer);
+        char content[4096];
+        generate_tujuan_content(content);
+        size_t len = strlen(content);
+        
+        // Memastikan pembacaan tidak melebihi batas (buffer overflow)
         if (offset < len) {
             if (offset + size > len) size = len - offset;
-            memcpy(buf, temp_buffer + offset, size);
+            memcpy(buf, content + offset, size);
         } else {
             size = 0;
         }
         return size;
     }
-
-    // Passthrough untuk membaca file biasa secara normal
-    (void) fi;
-    fd = open(fpath, O_RDONLY);
-    if (fd == -1) return -errno;
-
-    res = pread(fd, buf, size, offset);
-    if (res == -1) res = -errno;
-
-    close(fd);
-    return res;
+    // ... [kode passthrough file normal] ...
 }
 ```
-
