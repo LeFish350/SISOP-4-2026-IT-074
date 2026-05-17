@@ -1,7 +1,9 @@
 # LAPORAN RESMI PRAKTIKUM SISTEM OPERASI - MODUL 4
 
 **Nama:** Mahrinza Redouane Zakariyah
+
 **NRP:** 5027251074
+
 **Kelas:** Sistem Operasi A
 
 ## SOAL 1: Save Asisten Kenz
