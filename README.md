@@ -104,6 +104,7 @@ static int xmp_read(const char *path, char *buf, size_t size, off_t offset, stru
 ```
 
 ### Output
+<img width="1919" height="1021" alt="output_soal1" src="https://github.com/user-attachments/assets/989c1a45-ceea-48e1-92c9-86cc2d3474ea" />
 
 ---
 ## SOAL 2: Poke MOO
@@ -234,6 +235,127 @@ RUN chmod +x /app/server
 RUN mkdir -p /app/db
 EXPOSE 9000
 CMD ["./server"]
+```
+
+### Output
+<img width="647" height="266" alt="run client" src="https://github.com/user-attachments/assets/b6f8e26a-f9f0-4d9c-819f-cb827f24553b" />
+
+---
+
+## SOAL 3: LibraryIT
+
+### Deskripsi Masalah
+Sebagai *System Administrator* di IT Library Nusantara, praktikan diminta membangun infrastruktur *file sharing* tersentralisasi berbasis Samba dan Docker Compose. Sistem mewajibkan adanya dua *container*: `libraryit-server` sebagai pusat penyimpanan dan `libraryit-logger` untuk pencatatan aktivitas secara *real-time*. Di dalam server, wajib diterapkan automasi pembuatan *group* (`staff`, `readonly`) dan *user* (`member`, `contributor`, `librarian`). Ruang penyimpanan koleksi (`ebooks`, `papers`, `sourcecode`, `docs`) dibagi berdasarkan aturan hak akses (*Role-Based Access Control*) yang ketat. Selain itu, diperlukan juga mekanisme pembatasan izin keamanan tingkat direktori pada mesin *host*.
+
+### Konsep Penyelesaian
+Penyelesaian arsitektur ini menggunakan pendekatan *Infrastructure as Code* melalui `docker-compose.yml`. Untuk meminimalisasi *error* (seperti `exec format error`), skrip inisialisasi *user* dan grup tidak di-*copy* dari luar, melainkan diinjeksi langsung ke dalam *container* menggunakan perintah `printf` di dalam `Dockerfile`. Skrip ini akan mendaftarkan seluruh entitas dan kata sandinya ke memori Samba sesaat sebelum layanan `smbd` dijalankan di *foreground*. Konfigurasi *Role-Based Access Control* (RBAC) dan pengaktifan *Full Audit* untuk pelacakan akses diselesaikan melalui file `smb.conf`. Untuk pemantauan, `libraryit-logger` memanfaatkan *shared volume* untuk membaca file log yang dihasilkan oleh Samba.
+
+### Penjelasan Kode dan Logika Program
+1. **Automasi Inisialisasi Kredensial (Dockerfile & entrypoint.sh)**: Agar container dapat berjalan mandiri (unattended), sebuah skrip inisialisasi diinjeksi ke /init.sh melalui command printf pada instruksi RUN di Dockerfile. Skrip ini secara berurutan memanggil groupadd, useradd -G untuk meregistrasikan akun ke dalam Linux, dan meregistrasikan password Linux (chpasswd) serta kata sandi Samba (smbpasswd). Perintah penutup exec smbd -i -F -d 1 --no-process-group memastikan bahwa layanan beroperasi dalam mode interaktif dan foreground, sehingga container Docker tidak langsung mati (exit) setelah proses booting selesai.
+```yaml
+version: '3.8'
+services:
+  libraryit-server:
+    build: .
+    container_name: libraryit-server
+    volumes:
+      - ./data/ebooks:/libraryit/ebooks
+      - ./data/papers:/libraryit/papers
+      - ./data/sourcecode:/libraryit/sourcecode
+      - ./data/docs:/libraryit/docs
+      - ./logs:/var/log/samba
+    ports:
+      - "1445:445"
+
+  libraryit-logger:
+    image: alpine
+    container_name: libraryit-logger
+    depends_on:
+      - libraryit-server
+    volumes:
+      - ./logs:/logs
+    command: sh -c "tail -f /logs/log.smbd"
+```
+
+2. **Automasi Inisialisasi Kredensial (Dockerfile & entrypoint.sh)**: Agar container dapat berjalan mandiri (unattended), sebuah skrip inisialisasi diinjeksi ke /init.sh melalui command printf pada instruksi RUN di Dockerfile. Skrip ini secara berurutan memanggil groupadd, useradd -G untuk meregistrasikan akun ke dalam Linux, dan meregistrasikan password Linux (chpasswd) serta kata sandi Samba (smbpasswd). Perintah penutup exec smbd -i -F -d 1 --no-process-group memastikan bahwa layanan beroperasi dalam mode interaktif dan foreground, sehingga container Docker tidak langsung mati (exit) setelah proses booting selesai.
+**Dockerfile**
+```
+FROM ubuntu:latest
+
+RUN apt-get update && apt-get install -y samba procps
+COPY smb.conf /etc/samba/smb.conf
+RUN mkdir -p /libraryit/ebooks /libraryit/papers /libraryit/sourcecode /libraryit/docs
+
+RUN printf '#!/bin/bash\n\
+groupadd staff 2>/dev/null || true\n\
+groupadd readonly 2>/dev/null || true\n\
+id -u member &>/dev/null || useradd -m -G readonly member\n\
+id -u contributor &>/dev/null || useradd -m -G staff contributor\n\
+id -u librarian &>/dev/null || useradd -m -G staff librarian\n\
+echo "member:member123" | chpasswd\n\
+echo "contributor:contrib456" | chpasswd\n\
+echo "librarian:lib789" | chpasswd\n\
+(echo "member123"; echo "member123") | smbpasswd -a -s member\n\
+(echo "contrib456"; echo "contrib456") | smbpasswd -a -s contributor\n\
+(echo "lib789"; echo "lib789") | smbpasswd -a -s librarian\n\
+chmod -R 777 /libraryit/\n\
+# Jalankan smbd secara interaktif tanpa menjadi daemon sama sekali\n\
+exec smbd -i -F -d 1 --no-process-group\n' > /init.sh && chmod +x /init.sh
+
+ENTRYPOINT ["/bin/bash", "/init.sh"]
+```
+
+**entrypoint.sh**
+```sh
+#!/bin/bash
+
+groupadd staff 2>/dev/null || true
+groupadd readonly 2>/dev/null || true
+
+id -u member &>/dev/null || useradd -m -G readonly member
+id -u contributor &>/dev/null || useradd -m -G staff contributor
+id -u librarian &>/dev/null || useradd -m -G staff librarian
+
+echo "member:member123" | chpasswd
+echo "contributor:contrib456" | chpasswd
+echo "librarian:lib789" | chpasswd
+
+(echo "member123"; echo "member123") | smbpasswd -a -s member
+(echo "contrib456"; echo "contrib456") | smbpasswd -a -s contributor
+(echo "lib789"; echo "lib789") | smbpasswd -a -s librarian
+
+chmod -R 777 /libraryit/
+
+exec smbd -F -i -d 1 --no-process-group
+```
+
+3. **Konfigurasi Role-Based Access & Audit (smb.conf)**: Pada blok [global], parameter vfs objects = full_audit diaktifkan untuk melacak aksi sistem (seperti mkdir, pwrite, open). Modul audit ini mengarahkan log dengan templat khusus (%t|%u|%I|%m) menuju facility local7. Selanjutnya, setiap direktori dikonfigurasi hak aksesnya secara terperinci. Contohnya, pada [sourcecode], user yang berada di grup @readonly diblokir secara mutlak menggunakan aturan invalid users = @readonly. Pada [docs], konfigurasi diset read only = yes, namun izin khusus menulis (write) diberikan secara spesifik hanya kepada write list = librarian.
+```conf
+[global]
+   workgroup = WORKGROUP
+   server string = LibraryIT Server
+   security = user
+   map to guest = bad user
+   vfs objects = full_audit
+   full_audit:prefix = %t|%u|%I|%m
+   full_audit:success = mkdir rename unlink pwrite open
+   full_audit:failure = connect open
+   full_audit:facility = local7
+   full_audit:priority = notice
+
+[sourcecode]
+   path = /libraryit/sourcecode
+   browseable = yes
+   read only = no
+   valid users = @staff
+   invalid users = @readonly
+
+[docs]
+   path = /libraryit/docs
+   browseable = yes
+   read only = yes
+   valid users = @staff, @readonly
+   write list = librarian
 ```
 
 ### Output
